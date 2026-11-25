@@ -1,0 +1,160 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PA Rules Viewer</title>
+<style>
+/* Layout: one column. A header, a search-and-filter band, then a list of rules that open in place. */
+:root {
+  --bg: #F6F4EE; --panel: #FDFCF9; --ink: #0F2530; --text: #3B4A50; --muted: #56646A; --rule: #CFC9BA;
+  --accent: #B0481C; --req: #0F2530; --dep: #F0A35E; --dep-edge: #B0481C; --hollow: #7B888D;
+  --cov-bg: #DCE9E4; --cov-fg: #1B5A4A; --not-bg: #F1DCD6; --not-fg: #8A2D1B; --hit: #FBE3C8;
+  --display: 'Space Grotesk', 'Avenir Next', 'Segoe UI', sans-serif;
+  --body: 'Inter', 'Helvetica Neue', Arial, sans-serif;
+  --mono: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0F2530; --panel: #163240; --ink: #F6F4EE; --text: #C9D5D7; --muted: #9DB0B5; --rule: #2C4651;
+    --accent: #F0A35E; --req: #F6F4EE; --dep: #F0A35E; --dep-edge: #F0A35E; --hollow: #8AA0A8;
+    --cov-bg: #1D4A41; --cov-fg: #C4E6DA; --not-bg: #57291F; --not-fg: #F4C8BC; --hit: #5A3B1C;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0F2530; --panel: #163240; --ink: #F6F4EE; --text: #C9D5D7; --muted: #9DB0B5; --rule: #2C4651;
+  --accent: #F0A35E; --req: #F6F4EE; --dep: #F0A35E; --dep-edge: #F0A35E; --hollow: #8AA0A8;
+  --cov-bg: #1D4A41; --cov-fg: #C4E6DA; --not-bg: #57291F; --not-fg: #F4C8BC; --hit: #5A3B1C;
+  color-scheme: dark;
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.5 var(--body); }
+h1, h2, h3, p, dl, dd, ul { margin: 0; }
+input, select, button { font: inherit; }
+a { color: var(--accent); text-underline-offset: 2px; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.wrap {
+  max-width: 1120px; margin: 0 auto; padding-block: 36px 72px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
+  display: flex; flex-direction: column; gap: 22px;
+}
+.top { display: flex; flex-direction: column; gap: 8px; }
+.eyebrow { font-size: 12px; font-weight: 600; letter-spacing: 1.5px; text-transform: uppercase; color: var(--accent); }
+h1 { font: 600 34px/1.1 var(--display); letter-spacing: -0.5px; color: var(--ink); text-wrap: balance; }
+h3 { font: 600 16px/1.2 var(--display); color: var(--ink); }
+.sub { color: var(--muted); font-variant-numeric: tabular-nums; }
+
+.controls { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 12px 16px; align-items: end; }
+.field { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
+.wide { grid-column: 1 / -1; }
+.lbl { font-size: 11px; font-weight: 600; letter-spacing: 1.2px; text-transform: uppercase; color: var(--muted); }
+#q, select { width: 100%; height: 42px; padding: 0 12px; border: 1px solid var(--rule); border-radius: 6px; background: var(--panel); color: var(--ink); }
+#q { height: 48px; font-size: 17px; }
+.check { display: flex; align-items: center; gap: 8px; height: 42px; color: var(--ink); }
+.check input { width: 18px; height: 18px; accent-color: var(--accent); }
+
+.status { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 24px; }
+#count { font-weight: 600; color: var(--ink); font-variant-numeric: tabular-nums; }
+.legend { display: flex; flex-wrap: wrap; gap: 6px 18px; color: var(--muted); font-size: 13px; }
+.key { display: inline-flex; align-items: center; gap: 7px; }
+.sq { display: inline-block; flex: none; width: 14px; height: 14px; border: 2px solid var(--hollow); }
+.sq.req { background: var(--req); border-color: var(--req); }
+.sq.dep { background: var(--dep); border-color: var(--dep-edge); }
+.sq.unk { border-style: dashed; }
+#reset { margin-left: auto; padding: 6px 0; border: 0; background: none; color: var(--accent); font-weight: 600; text-decoration: underline; text-underline-offset: 2px; cursor: pointer; }
+
+#list { border-top: 1px solid var(--rule); }
+.rule { border-bottom: 1px solid var(--rule); }
+.rule > summary {
+  display: grid; grid-template-columns: 14px 62px minmax(0, 1.5fr) minmax(0, 1.1fr) 160px 12px;
+  grid-template-areas: "sq code label plan pa chev"; align-items: center; gap: 4px 14px;
+  padding: 11px 8px; cursor: pointer; list-style: none;
+}
+.rule > summary::-webkit-details-marker { display: none; }
+.rule > summary:hover, .rule[open] > summary { background: var(--panel); }
+.rule > summary .sq { grid-area: sq; }
+.code { grid-area: code; font: 600 16px/1.2 var(--display); color: var(--ink); font-variant-numeric: tabular-nums; }
+.label { grid-area: label; min-width: 0; color: var(--ink); font-weight: 600; }
+.n { margin-left: 8px; font-size: 13px; font-weight: 400; color: var(--muted); white-space: nowrap; }
+.plan { grid-area: plan; min-width: 0; }
+.pa { grid-area: pa; color: var(--ink); }
+.chev { grid-area: chev; width: 8px; height: 8px; border-right: 2px solid var(--muted); border-bottom: 2px solid var(--muted); transform: rotate(45deg); }
+.rule[open] .chev { transform: rotate(225deg); }
+
+.body { display: flex; flex-direction: column; gap: 18px; padding: 10px 8px 26px 98px; }
+.facts { display: grid; grid-template-columns: 150px minmax(0, 1fr); gap: 7px 16px; }
+.facts dt { padding-top: 2px; font-size: 13px; color: var(--muted); }
+.facts dd { min-width: 0; color: var(--ink); overflow-wrap: anywhere; }
+.loc { color: var(--muted); }
+.mono { font-family: var(--mono); font-size: 13px; }
+.ind { display: flex; flex-direction: column; gap: 8px; padding: 14px 0; border-top: 1px solid var(--rule); }
+.ind-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 10px; color: var(--ink); font-weight: 600; }
+.pill { padding: 2px 9px; border-radius: 999px; font-size: 12px; font-weight: 600; white-space: nowrap; }
+.pill.cov { background: var(--cov-bg); color: var(--cov-fg); }
+.pill.not { background: var(--not-bg); color: var(--not-fg); }
+.ind p { max-width: 75ch; }
+.crit { padding-left: 18px; max-width: 75ch; }
+.chips { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 0; list-style: none; }
+.chips .k { margin-right: 2px; font-size: 13px; color: var(--muted); }
+.chip { padding: 1px 8px; border: 1px solid var(--rule); border-radius: 4px; font-family: var(--mono); font-size: 13px; color: var(--ink); }
+.chip.hit { background: var(--hit); border-color: var(--accent); }
+.src { font-size: 13px; color: var(--muted); overflow-wrap: anywhere; }
+.none { padding: 18px 8px; color: var(--muted); }
+
+.about { padding-top: 14px; border-top: 1px solid var(--rule); }
+.about > summary { font: 600 16px/1.2 var(--display); color: var(--ink); cursor: pointer; }
+.about > div, .about > ul { display: flex; flex-direction: column; gap: 10px; margin-top: 12px; padding: 0; list-style: none; }
+.about p { max-width: 75ch; }
+.about li { display: flex; flex-direction: column; gap: 1px; overflow-wrap: anywhere; }
+
+@media (max-width: 760px) {
+  .rule > summary { grid-template-columns: 14px 56px minmax(0, 1fr) 12px; grid-template-areas: "sq code label chev" ". plan plan ." ". pa pa ."; }
+  .body { padding-left: 8px; }
+  .facts { grid-template-columns: minmax(0, 1fr); gap: 2px; }
+  .facts dd { margin-bottom: 8px; }
+}
+</style>
+</head>
+<body>
+
+<div class="wrap">
+  <header class="top">
+    <p class="eyebrow">Radiology prior authorization &middot; New York commercial plans</p>
+    <h1>PA Rules Viewer</h1>
+    <p class="sub" id="sub"></p>
+  </header>
+
+  <section class="controls" aria-label="Search and filters">
+    <label class="field wide"><span class="lbl">Search</span>
+      <input id="q" type="search" autocomplete="off" placeholder="CPT code, procedure, payer, indication or diagnosis code, for example 72148 or M54.50"></label>
+    <label class="field"><span class="lbl">Payer plan</span><select id="f-plan"><option value="">All payer plans</option></select></label>
+    <label class="field"><span class="lbl">Authorization</span><select id="f-pa">
+      <option value="">Any answer</option><option value="yes">Required</option><option value="conditional">Depends on the plan</option><option value="no">Not required</option><option value="unknown">Unknown</option></select></label>
+    <label class="field"><span class="lbl">Modality</span><select id="f-mod"><option value="">All modalities</option></select></label>
+    <label class="check"><input type="checkbox" id="f-ind"> With coverage criteria</label>
+  </section>
+
+  <div class="status">
+    <p id="count" aria-live="polite"></p>
+    <div class="legend">
+      <span class="key"><span class="sq req"></span>Required</span>
+      <span class="key"><span class="sq dep"></span>Depends on the plan</span>
+      <span class="key"><span class="sq"></span>Not required</span>
+      <span class="key"><span class="sq unk"></span>Unknown</span>
+    </div>
+    <button id="reset" type="button">Clear search and filters</button>
+  </div>
+
+  <main id="list"></main>
+
+  <details class="about"><summary>Scope and caveats</summary><div id="about"></div></details>
+  <details class="about"><summary id="src-title">Sources</summary><ul id="sources"></ul></details>
+</div>
+
+<script src="pa_rules.data.js"></script>
+<script src="viewer.js"></script>
+</body>
+</html>
